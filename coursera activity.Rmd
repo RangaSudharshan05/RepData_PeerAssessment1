@@ -1,0 +1,222 @@
+---
+title: "Monitoring Activity"
+author: "Ranga Sudharshan"
+date: "12/16/2020"
+output: 
+  html_document: 
+    fig_width: 10
+    fig_height: 8
+---
+
+## Introduction
+
+As it is now possible to collect a large amount of data about personal movement using activity monitoring devices such as a Fitbit, Nike Fuelband, or Jawbone Up. These type of devices are part of the “quantified self” movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. But these data remain under-utilized both because the raw data are hard to obtain and there is a lack of statistical methods and software for processing and interpreting the data.
+
+This project will make use of data from a personal activity monitoring device. This device collects data at 5 minute intervals through out the day. The data consists of two months of data from an anonymous individual collected during the months of October and November, 2012 and include the number of steps taken in 5 minute intervals each day.
+
+The data for this project can be downloaded here:
+
+Dataset: [Data](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip)
+
+
+```{r setup   }
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyr)
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+```
+
+
+### Variables
+
+The variables included in this dataset are:
+
+* steps: Number of steps taking in a 5-minute interval (missing values are coded as NA)
+* date: The date on which the measurement was taken in YYYY-MM-DD format
+* interval: Identifier for the 5-minute interval in which measurement was taken
+The dataset is stored in a comma-separated-value (CSV) file and there are a total of 17,568 observations in this dataset.
+
+### Processing data
+
+```{r}
+data<- read.csv("activity.csv",header = T)
+head(data)
+str(data)
+```
+
+First objective is to calculate total number of steps taken each day. 
+```{r}
+total_step_data<- data %>%
+  group_by(date) %>%
+  summarise(total_steps=sum(steps))
+total_step_data<-total_step_data %>% drop_na(total_steps)
+head(total_step_data)
+str(total_step_data)
+```
+
+*Visualising the calculated values*
+
+```{r}
+g<-ggplot(total_step_data,aes(date,total_steps))
+g+ geom_bar(stat = 'identity',fill='black')+
+  ggtitle('Total steps per day')+
+  theme(axis.text.x = element_text(angle=90))
+```
+
+For finding the mean and the median of the total steps taken per day, summary function can be used.
+```{r}
+summary(total_step_data$total_steps)
+```
+
+### Time series plotting of average daily activity pattern
+
+Segregating the mean of the steps(data) on the basis on 5 minute interval and plotting it.
+```{r}
+step_data<-aggregate(steps~interval,data=data,mean)
+head(step_data)
+
+plot(step_data$interval,
+     step_data$steps, 
+     type = "l",
+     xlab = 'Minutes',
+     ylab = 'Total Steps',
+     lwd=2.5,
+     main = "Time Series Plot of Average Steps Taken per Interval")
+```
+
+To find out which interval has more number of steps, grep or grepl function can be used as both of them are identical in this scenario.
+
+```{r}
+step_data[grepl(max(step_data$steps),step_data$steps),]
+```
+
+### Imputing missing values
+
+Calculating NA values in the entire dataset
+```{r}
+na.info<-apply(is.na(data),2,which)
+str(na.info)
+```
+
+Substituing the NA values in the dataset by the mean of the column
+```{r}
+data_withoutNA<-data
+data_withoutNA$steps[which(is.na(data_withoutNA$steps))]<-mean(data$steps,na.rm = T)
+
+#checking whether the new datasets has no NA values
+na.info<-apply(is.na(data_withoutNA),2,which)
+summary(data_withoutNA)
+```
+
+Better way to make efficient dataset is to substitute the the mean value of steps taken in that particular interval. Also, the step_data dataset has the mean values of each interval.
+
+```{r}
+data_withoutNA<-data
+for (i in 1:length(data_withoutNA$steps)){
+  if (is.na(data_withoutNA[i,1]== TRUE)){
+    data_withoutNA[i,1]=step_data[step_data[,1] %in%  data_withoutNA[i,3], 2]}
+   }
+head(data_withoutNA)
+#checking for NA values
+na.info<-apply(is.na(data_withoutNA),2,which)
+str(na.info)
+```
+
+*Visualising the calculated value in the new dataset*
+
+```{r}
+step_data<- data_withoutNA %>% group_by(date) %>% summarise(total_steps=sum(steps))
+g<-ggplot(step_data,aes(date,total_steps))
+g + geom_bar(stat='identity',fill='black')+
+  ggtitle('Total steps per day')+
+  theme(axis.text.x=element_text(angle=90))
+
+#finding out median and mean of the steps taken
+summary(step_data)
+```
+
+### Activity patterns between weekdays and weekends
+
+Aim is to plot a time series plot and checking the number of step taken per interval in weekdays and weekends.
+
+```{r}
+data_days<-data_withoutNA
+data_days$day<-weekdays(as.Date(data_withoutNA$date))
+data_days$weekday<-as.numeric(rep(1,times=length(data_withoutNA$steps)))
+for (i in 1: length(data_withoutNA$steps)) {
+  if (data_days$day[i] %in% c("Saturday","Sunday")){
+    data_days$weekday[i]="Weekend"
+  }
+  else{
+    data_days$weekday[i]="Weekday"
+  }
+}
+data_days$day<-as.factor(data_days$day)
+data_days$weekday<-as.factor(data_days$weekday)
+str(data_days)
+```
+
+Segregating the new dataset and plotting it
+```{r}
+weekday_data<-data_days[data_days$weekday=="Weekday",]
+weekend_data<-data_days[data_days$weekday=="Weekend",]
+weekday_mean<- aggregate(steps ~ interval, weekday_data, mean)
+weekend_mean<- aggregate(steps ~ interval, weekend_data,mean)
+
+par(mfrow=c(2,1))
+plot(weekday_mean$interval,
+     weekday_mean$steps,
+     type='l',
+     main='Average steps taken per interval in weekdays',
+     xlab = 'Intervals',
+     ylab = 'Total steps',
+     color='blue',
+     lwd=2.5,
+     ylim = c(1,250),
+     xlim = c(1,2500))
+plot(weekend_mean$interval,
+     weekend_mean$steps,
+     type='l',
+     main='Average steps taken per interval in weekends',
+     xlab = 'Intervals',
+     ylab = 'Total steps',
+     col='black',
+     lwd=2.5,
+     ylim = c(1,250),
+     xlim = c(1,2500))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
